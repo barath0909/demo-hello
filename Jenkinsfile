@@ -2,39 +2,97 @@ pipeline {
     agent any
 
     environment {
-        image_name = "barathj09/demohello"
+        IMAGE_NAME = "barathj09/demohello"
+        DEPLOYMENT_FILE = "deployment.yaml"
     }
 
     stages {
-        stage("git-checkout") {
+
+        stage('Git Checkout') {
             steps {
                 checkout scm
             }
         }
-        stage("image-build") {
+
+        stage('Generate Image Tag') {
             steps {
                 script {
-                    env.image_tag = new Date().format("yyyy-MM-dd-HHmmss")
-                    env.full_image = "${env.image_name}:${env.image_tag}"
+                    env.IMAGE_TAG = new Date().format("yyyy-MM-dd-HHmmss")
+                    env.FULL_IMAGE = "${IMAGE_NAME}:${IMAGE_TAG}"
+
+                    echo "Image Name: ${FULL_IMAGE}"
                 }
             }
         }
-        stage("docker login") {
+
+        stage('Docker Login') {
             steps {
-                script {
-                    withCredentials([usernamePassword(credentialsId: 'docker_cred', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
-                        bat "docker login -u ${DOCKER_USERNAME} -p ${DOCKER_PASSWORD}"
-                    }
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'docker_cred',
+                        usernameVariable: 'DOCKER_USERNAME',
+                        passwordVariable: 'DOCKER_PASSWORD'
+                    )
+                ]) {
+
+                    sh '''
+                    echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+                    '''
                 }
             }
         }
-        stage("docker push") {
+
+        stage('Build Docker Image') {
             steps {
-                script {
-                    bat "docker build -t ${env.full_image} ."
-                    bat "docker push ${env.full_image}"
-                }
+                sh '''
+                docker build -t ${FULL_IMAGE} .
+                '''
             }
         }
+
+        stage('Push Docker Image') {
+            steps {
+                sh '''
+                docker push ${FULL_IMAGE}
+                '''
+            }
+        }
+
+        stage('Update Kubernetes Deployment File') {
+            steps {
+                sh """
+                sed -i 's|image: .*|image: ${FULL_IMAGE}|' ${DEPLOYMENT_FILE}
+
+                git config user.name "Jenkins"
+                git config user.email "jenkins@example.com"
+
+                git add ${DEPLOYMENT_FILE}
+                git commit -m "Updated image to ${FULL_IMAGE}" || echo "No changes to commit"
+
+                git push
+                """
+            }
+        }
+
+        stage('Deploy to Kubernetes') {
+            steps {
+                sh '''
+                kubectl apply -f deployment.yaml
+                '''
+            }
+        }
+
+    }
+
+    post {
+
+        success {
+            echo "Pipeline executed successfully"
+        }
+
+        failure {
+            echo "Pipeline failed"
+        }
+
     }
 }
