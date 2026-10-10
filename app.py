@@ -1,10 +1,13 @@
 from flask import Flask
+from prometheus_flask_exporter import PrometheusMetrics
+
 
 app = Flask(__name__)
+metrics = PrometheusMetrics(app)
 
 @app.route("/")
 def hello():
-    return "Hello devops!"                   
+    return "Hello  this is final hello project!"                   
 @app.route("/new")
 def new():
     return "FINAL CHECK"            
